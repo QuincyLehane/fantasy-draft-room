@@ -22,6 +22,8 @@ test("server-renders the finished draft room", async () => {
   assert.match(html, /Track the room\./);
   assert.match(html, /1\.10 in 9 picks/);
   assert.match(html, /2026 rankings baseline/);
+  assert.match(html, /UPSIDE-FIRST/);
+  assert.match(html, /Ceiling gets the largest preference boost/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
