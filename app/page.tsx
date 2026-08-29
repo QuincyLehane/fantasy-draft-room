@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Player, Position, players } from "./players";
 import { profileFor } from "./player-profiles";
+import { RANKINGS_REFRESHED } from "./current-rankings";
 
 type DraftPick = { playerId: string; mine: boolean; at: number };
 type BoardView = "available" | "drafted";
@@ -66,11 +67,11 @@ function availabilityScore(player: Player, age: number, status: string | undefin
   if (player.pos === "DST" || player.pos === "K") return 7;
   const normalized = status?.toLowerCase() ?? "";
   const statusPenalty = normalized.includes("ir") || normalized.includes("out")
-    ? 5
+    ? 7
     : normalized.includes("pup") || normalized.includes("doubt")
-      ? 4
+      ? 5
       : normalized.includes("question")
-        ? 1.25
+        ? 2
         : 0;
   const agePenalty = player.pos === "RB" && age >= 29
     ? 2
@@ -155,14 +156,16 @@ function recommendationFor(player: Player, available: Player[], roster: Player[]
   const likelyGone = player.rank <= nextAt + 3;
   const turnUrgency = likelyGone ? clamp((nextAt - overall) * 0.28, 2, 8) : 0;
   if (turnUrgency >= 4) marketReasons.push("is unlikely to make it back through the turn");
+  const reachPenalty = turnUrgency >= 4 ? 0 : clamp((player.rank - overall - 4) * 1.5, 0, 12);
+  if (reachPenalty >= 4) marketReasons.push("can likely be taken later than this pick");
 
   if (strategy.upside >= 8) strategyReasons.push("brings the high ceiling you asked for");
   else if (strategy.youth >= 8) strategyReasons.push("fits your youth-first build");
   if (strategy.availability >= 8 && !strategyReasons.length) strategyReasons.push("has a strong availability profile");
   if (strategy.availability <= 4) strategyReasons.push("carries a meaningful availability penalty");
 
-  const preferenceAdjustment = (strategy.youth - 5) * 1.15 + (strategy.availability - 5) * 1.35 + (strategy.upside - 5) * 1.6;
-  score += need + scarcity + turnUrgency + preferenceAdjustment;
+  const preferenceAdjustment = (strategy.youth - 5) * 1.15 + (strategy.availability - 7.5) * 1.6 + (strategy.upside - 5) * 1.6;
+  score += need + scarcity + turnUrgency + preferenceAdjustment - reachPenalty;
   const fit = clamp(Math.round(score * 0.63), 48, 99);
   const reasons = [...lineupReasons.slice(0, 1), ...strategyReasons.slice(0, 1), ...marketReasons.slice(0, 1)];
   const explanation = reasons.length
@@ -325,7 +328,7 @@ export default function Home() {
           {featured ? <>
             <div className="featuredName"><span className={`posBadge ${featured.player.pos.toLowerCase()}`}>{featured.player.pos}</span><h3>{featured.player.name}</h3></div>
             <p>{featured.explanation}</p>
-            <div className="featuredMeta"><span>{featured.player.team}</span><span>Bye {featured.player.bye}</span><span>Half-PPR #{featured.player.rank}</span><span>Age {featured.strategy.age || "—"}</span><span>Upside {featured.strategy.upside}/10</span><span>Availability {featured.strategy.availability}/10</span></div>
+            <div className="featuredMeta"><span>{featured.player.team}</span><span>Bye {featured.player.bye}</span><span>Half-PPR #{featured.player.rank}</span><span>Age {featured.strategy.age || "—"}</span><span>Upside {featured.strategy.upside}/10</span><span>Availability {featured.strategy.availability}/10</span><span>{featured.strategy.injuryStatus ?? "No current designation"}</span></div>
             <div className="featuredActions"><button className="primaryButton" onClick={() => recordPick(featured.player, true)}>Draft for me</button><button className="secondaryButton dark" onClick={() => recordPick(featured.player, false)}>Taken by another team</button></div>
           </> : <h3>Draft complete</h3>}
         </div>
@@ -345,7 +348,7 @@ export default function Home() {
               const pick = picks.find((candidate) => candidate.playerId === player.id);
               return <article className="playerRow" key={player.id}>
                 <span className="rank">{String(player.rank).padStart(3, "0")}</span>
-                <div className="playerIdentity"><span className={`posBadge ${player.pos.toLowerCase()}`}>{player.pos === "DST" ? "D" : player.pos}</span><div><strong>{player.name}</strong><small>{player.team} · Bye {player.bye}{item.strategy.age ? ` · Age ${item.strategy.age}` : ""} · U{item.strategy.upside} · A{item.strategy.availability}</small></div></div>
+                <div className="playerIdentity"><span className={`posBadge ${player.pos.toLowerCase()}`}>{player.pos === "DST" ? "D" : player.pos}</span><div><strong>{player.name}</strong><small>{player.team} · Bye {player.bye}{item.strategy.age ? ` · Age ${item.strategy.age}` : ""} · U{item.strategy.upside} · A{item.strategy.availability}{item.strategy.injuryStatus ? ` · ${item.strategy.injuryStatus}` : ""}</small></div></div>
                 <span className="tier">T{player.tier}</span><span className="rowFit">{view === "available" ? item.fit : "—"}</span>
                 {view === "available" ? <div className="rowActions"><button onClick={() => recordPick(player, false)} title="Taken by another team">Out</button><button className="mine" onClick={() => recordPick(player, true)} title="Add to my roster">Mine</button></div> : <span className={`draftedBy ${pick?.mine ? "mine" : ""}`}>{pick?.mine ? "MY ROSTER" : `PICK ${pick?.at}`}</span>}
               </article>;
@@ -357,14 +360,14 @@ export default function Home() {
         <aside className="rosterPanel">
           <div className="panelHeading"><div><p className="eyebrow">TEAM 10</p><h3>Your roster</h3></div><span className="rosterCount">{roster.length}/16</span></div>
           <div className="rosterSlots">{rosterSlots.map((slot) => <div className={`rosterSlot ${slot.player ? "filled" : ""}`} key={slot.key}><span>{slot.label}</span>{slot.player ? <div><strong>{slot.player.name}</strong><small>{slot.player.pos} · {slot.player.team} · Bye {slot.player.bye}</small></div> : <em>Open slot</em>}</div>)}</div>
-          <div className="rosterNote"><strong>Upside-first logic</strong><p>Ceiling gets the largest preference boost (1.6×), followed by availability (1.35×) and youth (1.15×). Floor is not penalized; lineup need, half-PPR value, and turn scarcity still keep the board grounded.</p></div>
+          <div className="rosterNote"><strong>Upside-first logic</strong><p>Ceiling and availability carry the strongest weight (1.6×), followed by youth (1.15×). Floor is not penalized, but active injury risk and an avoidable reach can override raw upside.</p></div>
         </aside>
       </div>
 
       <footer>
         <div><strong>Half Point Draft Room</strong><span>Built for a 10-team, half-PPR snake draft from slot 10.</span></div>
         <div className="footerLinks"><a href="https://www.fantasypros.com/nfl/cheatsheets/top-half-ppr-players.php" target="_blank" rel="noreferrer">2026 rankings baseline ↗</a><a href="https://docs.sleeper.com/" target="_blank" rel="noreferrer">Player profile data ↗</a><button onClick={resetDraft}>Reset draft</button></div>
-        <p>Rankings baseline refreshed August 17, 2026. Age, experience, and current injury designation refreshed August 18 from Sleeper; availability scores also include a small manually reviewed recurring-risk adjustment. Recommendations are decision support, not medical advice or a guarantee of performance.</p>
+        <p>Rankings and current injury designations refreshed {RANKINGS_REFRESHED}. Availability scores also include a small manually reviewed recurring-risk adjustment. Recommendations are decision support, not medical advice or a guarantee of performance.</p>
       </footer>
     </main>
   );

@@ -1,3 +1,5 @@
+import { currentRankingFor } from "./current-rankings";
+
 export type Position = "QB" | "RB" | "WR" | "TE" | "DST" | "K";
 
 export type Player = {
@@ -20,6 +22,7 @@ const offense: PlayerSeed[] = [
   ["Jadarian Price","SEA","RB",11,5],["Caleb Williams","CHI","QB",10,5],["Tucker Kraft","GB","TE",11,5],["Parker Washington","JAC","WR",7,5],["Carnell Tate","TEN","WR",9,5],["Justin Herbert","LAC","QB",7,5],["Marvin Harrison Jr.","ARI","WR",14,5],["Jaylen Warren","PIT","RB",9,5],["Rhamondre Stevenson","NE","RB",11,5],["Brian Thomas Jr.","JAC","WR",7,5],["Trevor Lawrence","JAC","QB",7,5],["Sam LaPorta","DET","TE",6,5],["Tony Pollard","TEN","RB",9,5],["Harold Fannin Jr.","CLE","TE",11,5],["DK Metcalf","PIT","WR",9,5],["Dak Prescott","DAL","QB",14,5],["Rico Dowdle","PIT","RB",9,5],["Kyle Pitts Sr.","ATL","TE",11,5],["Chris Godwin Jr.","TB","WR",10,5],["Courtland Sutton","DEN","WR",10,5],["Chuba Hubbard","CAR","RB",5,5],["Alec Pierce","IND","WR",13,5],["Jonathon Brooks","CAR","RB",5,5],["J.K. Dobbins","DEN","RB",10,5],
   ["Michael Pittman Jr.","PIT","WR",9,6],["Michael Wilson","ARI","WR",14,6],["Josh Downs","IND","WR",13,6],["Quentin Johnston","LAC","WR",7,6],["Brock Purdy","SF","QB",8,6],["Jordyn Tyson","NO","WR",8,6],["Jaxson Dart","NYG","QB",8,6],["Blake Corum","LAR","RB",11,6],["RJ Harvey","DEN","RB",10,6],["George Kittle","SF","TE",8,6],["Bo Nix","DEN","QB",10,6],["Kyle Monangai","CHI","RB",10,6],["Patrick Mahomes II","KC","QB",5,6],["Wan'Dale Robinson","TEN","WR",9,6],["Jordan Addison","MIN","WR",6,6],["Travis Kelce","KC","TE",5,6],["Kenny Gainwell","TB","RB",10,6],["Jacory Croskey-Merritt","WAS","RB",7,6],["Makai Lemon","PHI","WR",10,6],["Jared Goff","DET","QB",6,6],["Matthew Stafford","LAR","QB",11,6],["Rachaad White","WAS","RB",7,6],["Jordan Mason","MIN","RB",6,6],["Jayden Reed","GB","WR",11,6],["Jakobi Meyers","JAC","WR",7,6],["Dalton Kincaid","BUF","TE",7,6],["Kyler Murray","MIN","QB",6,6],["Aaron Jones Sr.","MIN","RB",6,6],["Stefon Diggs","WAS","WR",7,6],["Isaiah Likely","NYG","TE",8,6],["Dallas Goedert","PHI","TE",10,6],["Jake Ferguson","DAL","TE",14,6],["Baker Mayfield","TB","QB",10,6],["Jordan Love","GB","QB",11,6],["Mark Andrews","BAL","TE",13,6],["Jayden Higgins","HOU","WR",8,6],["Tyler Shough","NO","QB",8,6],["Xavier Worthy","KC","WR",5,6],["Chris Rodriguez Jr.","JAC","RB",7,6],["Tyrone Tracy Jr.","NYG","RB",8,6],["KC Concepcion","CLE","WR",11,6],["Jalen Coker","CAR","WR",5,6],["Khalil Shakir","BUF","WR",7,6],["Matthew Golden","GB","WR",11,6],["Tyler Allgeier","ARI","RB",14,6],
   ["Woody Marks","HOU","RB",8,7],["Malik Willis","MIA","QB",6,7],["Romeo Doubs","NE","WR",11,7],["Zach Charbonnet","SEA","RB",11,7],["Juwan Johnson","NO","TE",8,7],["Tyjae Spears","TEN","RB",9,7],["Deebo Samuel Sr.","SF","WR",8,7],["Alvin Kamara","NO","RB",8,7],["Sam Darnold","SEA","QB",11,7],["De'Zhaun Stribling","SF","WR",8,7],["C.J. Stroud","HOU","QB",8,7],["Keaton Mitchell","LAC","RB",7,7],["Tank Bigsby","PHI","RB",10,7],["Brenton Strange","JAC","TE",7,7],["Rashid Shaheed","SEA","WR",11,7],["Chig Okonkwo","WAS","TE",7,7],["Hunter Henry","NE","TE",11,7],["Isiah Pacheco","DET","RB",6,7],["Brian Robinson Jr.","ATL","RB",11,7],["Jonah Coleman","DEN","RB",10,7],["Dylan Sampson","CLE","RB",11,7],["Cam Ward","TEN","QB",9,7],["Denzel Boston","CLE","WR",11,7],["Daniel Jones","IND","QB",13,7],["Oronde Gadsden II","LAC","TE",7,7],["Dalton Schultz","HOU","TE",8,7],["Jalen McMillan","TB","WR",10,7],
+  ["MarShawn Lloyd","GB","RB",11,7],["Adonai Mitchell","NYJ","WR",13,7],["Tre Tucker","LV","WR",13,7],
 ];
 
 const defenses: Array<PlayerSeed & { rank?: number }> = [
@@ -31,7 +34,10 @@ const kickers: Array<PlayerSeed & { rank?: number }> = [
 ];
 
 export const players: Player[] = [
-  ...offense.map(([name,team,pos,bye,tier], index) => ({ id:`p-${index + 1}`, name, team, pos, bye, tier, rank:index + 1 })),
+  ...offense.map(([name,team,pos,bye,tier], index) => {
+    const current = currentRankingFor(name, index + 1, tier, team, bye);
+    return { id:`p-${index + 1}`, name, team:current.team ?? team, pos, bye:current.bye ?? bye, tier:current.tier, rank:current.rank };
+  }),
   ...defenses.map((seed, index) => ({ id:`dst-${index + 1}`, name:seed[0], team:seed[1], pos:seed[2], bye:seed[3], tier:seed[4], rank:seed.rank ?? 194 + index })),
   ...kickers.map((seed, index) => ({ id:`k-${index + 1}`, name:seed[0], team:seed[1], pos:seed[2], bye:seed[3], tier:seed[4], rank:seed.rank ?? 218 + index })),
 ];
