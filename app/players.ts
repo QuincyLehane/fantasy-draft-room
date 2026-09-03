@@ -1,4 +1,7 @@
 import { currentRankingFor } from "./current-rankings";
+import { pprRankingFor } from "./ppr-rankings";
+
+export type ScoringMode = "half" | "ppr";
 
 export type Position = "QB" | "RB" | "WR" | "TE" | "DST" | "K";
 
@@ -41,3 +44,11 @@ export const players: Player[] = [
   ...defenses.map((seed, index) => ({ id:`dst-${index + 1}`, name:seed[0], team:seed[1], pos:seed[2], bye:seed[3], tier:seed[4], rank:seed.rank ?? 194 + index })),
   ...kickers.map((seed, index) => ({ id:`k-${index + 1}`, name:seed[0], team:seed[1], pos:seed[2], bye:seed[3], tier:seed[4], rank:seed.rank ?? 218 + index })),
 ];
+
+export function playersForScoring(scoring: ScoringMode): Player[] {
+  if (scoring === "half") return players;
+  return players.map((player) => {
+    const current = pprRankingFor(player.name, player.rank, player.tier, player.team, player.bye);
+    return { ...player, rank: current.rank, tier: current.tier, team: current.team ?? player.team, bye: current.bye ?? player.bye };
+  });
+}

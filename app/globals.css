@@ -26,6 +26,10 @@ main { min-height: 100vh; }
 .brandMark { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: var(--orange); color: white; font-family: Georgia,serif; font-size: 21px; font-weight: 800; box-shadow: 4px 4px 0 var(--ink); }
 .brandCopy h1 { margin: 0; font: 700 20px/1 Georgia,serif; }
 .eyebrow { margin: 0 0 5px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .17em; }
+.scoringTabs { min-width: 0; margin-left: 18px; padding: 3px; display: flex; gap: 2px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-deep); }
+.scoringTabs button { padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 900; cursor: pointer; }
+.scoringTabs button.selected { background: var(--ink); color: white; box-shadow: 0 1px 3px rgba(23,37,31,.2); }
+.scoringTabs button:hover:not(.selected) { color: var(--ink); }
 .leaguePill { margin-left: auto; padding: 9px 13px; border: 1px solid var(--line); border-radius: 99px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .leaguePill span { width: 7px; height: 7px; display: inline-block; margin-right: 7px; border-radius: 50%; background: #4f9c66; }
 .strategyPill { padding: 8px 11px; border-radius: 99px; background: var(--ink); color: var(--orange); font-size: 9px; font-weight: 900; letter-spacing: .12em; white-space: nowrap; }
@@ -142,7 +146,7 @@ footer > p { grid-column: 1 / -1; margin: 0; }
 }
 
 @media (max-width: 780px) {
-  .topbar { flex-wrap: wrap; }.leaguePill { order: 3; margin: 0; }.strategyPill { order: 4; }.headerActions { margin-left: auto; }.quietButton { padding-inline: 7px; }
+  .topbar { flex-wrap: wrap; }.scoringTabs { order: 3; margin: 0; }.leaguePill { order: 4; margin: 0; }.strategyPill { order: 5; }.headerActions { margin-left: auto; }.quietButton { padding-inline: 7px; }
   .draftStatus { grid-template-columns: 1fr; padding-top: 30px; }.statusIntro h2 { font-size: 46px; }.clockCard { min-height: 130px; }.clockCard strong { font-size: 46px; }
   .recommendationStrip { grid-template-columns: 1fr; }.recommendationLead,.fitGauge { border-right: 0; border-bottom: 1px solid #435048; }.fitGauge { padding-block: 24px; }.fitGauge > strong { font-size: 58px; }.alternatives { display: block; }.alternatives > button { display: grid; }
   .workspace { grid-template-columns: 1fr; }.rosterPanel { order: -1; border-left: 0; border-bottom: 1px solid var(--line); }.rosterSlots { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }.rosterNote { display: none; }
@@ -151,7 +155,7 @@ footer > p { grid-column: 1 / -1; margin: 0; }
 }
 
 @media (max-width: 520px) {
-  .brandCopy { display: none; }.leaguePill { width: 100%; text-align: center; }.strategyPill { display: none; }.headerActions { margin-left: auto; }
+  .brandCopy { display: none; }.scoringTabs { width: 100%; order: 6; }.scoringTabs button { flex: 1; }.leaguePill { display: none; }.strategyPill { display: none; }.headerActions { margin-left: auto; }
   .recommendationLead { padding-block: 28px; }.featuredName h3 { font-size: 31px; }.featuredActions { flex-direction: column; }.primaryButton,.secondaryButton { width: 100%; }
   .rosterSlots { grid-template-columns: 1fr; }.rosterSlot:nth-child(n+10) { display: none; }
   .panelHeading { align-items: flex-start; flex-direction: column; }.viewToggle { width: 100%; }.viewToggle button { flex: 1; }

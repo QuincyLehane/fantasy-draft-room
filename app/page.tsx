@@ -1,15 +1,20 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Player, Position, players } from "./players";
-import { profileFor } from "./player-profiles";
+import { Player, Position, ScoringMode, playersForScoring } from "./players";
+import { PLAYER_PROFILES_REFRESHED, profileFor } from "./player-profiles";
 import { RANKINGS_REFRESHED } from "./current-rankings";
+import { PPR_RANKINGS_REFRESHED } from "./ppr-rankings";
+import { rosterGuardrails } from "./roster-guardrails";
 
 type DraftPick = { playerId: string; mine: boolean; at: number };
 type BoardView = "available" | "drafted";
 type Filter = "ALL" | Position;
 
-const STORAGE_KEY = "half-point-draft-room-v1";
+const STORAGE_KEYS: Record<ScoringMode, string> = {
+  half: "half-point-draft-room-v1",
+  ppr: "full-ppr-draft-room-v1",
+};
 const TEAM_COUNT = 10;
 const ROUNDS = 16;
 const DRAFT_SLOT = 10;
@@ -93,7 +98,7 @@ function strategyScores(player: Player) {
   return { ...profile, youth, upside, availability };
 }
 
-function recommendationFor(player: Player, available: Player[], roster: Player[], overall: number) {
+function recommendationFor(player: Player, available: Player[], roster: Player[], overall: number, scoring: ScoringMode) {
   const round = Math.ceil(overall / TEAM_COUNT);
   const counts = positionCounts(roster);
   const skillCount = counts.RB + counts.WR + counts.TE;
@@ -140,8 +145,6 @@ function recommendationFor(player: Player, available: Player[], roster: Player[]
     if (counts.QB === 0) {
       need += round >= 5 ? 11 : player.tier <= 3 ? 3 : -7;
       lineupReasons.push(round >= 5 ? "fills your open quarterback slot" : "offers an elite quarterback edge");
-    } else {
-      need -= round < 13 ? 18 : 4;
     }
   }
 
@@ -150,6 +153,9 @@ function recommendationFor(player: Player, available: Player[], roster: Player[]
     need += alreadyFilled ? -30 : round >= 14 ? 14 : -48;
     lineupReasons.push(round >= 14 ? `fills your ${player.pos === "DST" ? "defense" : "kicker"} slot` : "is best saved for the final rounds");
   }
+
+  const guardrail = rosterGuardrails(player.pos, counts, roster.length, round);
+  need += guardrail.adjustment;
 
   const scarcity = clamp(tierCliff * 5 + (nextAtPosition ? nextAtPosition.rank - player.rank : 4) * 0.35, 0, 10);
   if (scarcity >= 5) marketReasons.push(`sits near the end of ${player.pos} tier ${player.tier}`);
@@ -167,10 +173,10 @@ function recommendationFor(player: Player, available: Player[], roster: Player[]
   const preferenceAdjustment = (strategy.youth - 5) * 1.15 + (strategy.availability - 7.5) * 1.6 + (strategy.upside - 5) * 1.6;
   score += need + scarcity + turnUrgency + preferenceAdjustment - reachPenalty;
   const fit = clamp(Math.round(score * 0.63), 48, 99);
-  const reasons = [...lineupReasons.slice(0, 1), ...strategyReasons.slice(0, 1), ...marketReasons.slice(0, 1)];
+  const reasons = [...guardrail.reasons.slice(0, 1), ...lineupReasons.slice(0, 1), ...strategyReasons.slice(0, 1), ...marketReasons.slice(0, 1)];
   const explanation = reasons.length
     ? `${player.name} ${reasons.slice(0, 2).join(" and ")}.`
-    : `${player.name} is the strongest half-PPR value left on the board.`;
+    : `${player.name} is the strongest ${scoring === "ppr" ? "full-PPR" : "half-PPR"} value left on the board.`;
   return { player, score, fit, explanation, strategy };
 }
 
@@ -208,7 +214,8 @@ function assignRosterSlots(roster: Player[]) {
 }
 
 export default function Home() {
-  const [picks, setPicks] = useState<DraftPick[]>([]);
+  const [scoring, setScoring] = useState<ScoringMode>("half");
+  const [drafts, setDrafts] = useState<Record<ScoringMode, DraftPick[]>>({ half: [], ppr: [] });
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("ALL");
   const [view, setView] = useState<BoardView>("available");
@@ -218,22 +225,31 @@ export default function Home() {
   useEffect(() => {
     queueMicrotask(() => {
       try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved) setPicks(JSON.parse(saved));
+        const half = window.localStorage.getItem(STORAGE_KEYS.half);
+        const ppr = window.localStorage.getItem(STORAGE_KEYS.ppr);
+        setDrafts({
+          half: half ? JSON.parse(half) : [],
+          ppr: ppr ? JSON.parse(ppr) : [],
+        });
       } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
+        window.localStorage.removeItem(STORAGE_KEYS.half);
+        window.localStorage.removeItem(STORAGE_KEYS.ppr);
       }
       setHydrated(true);
     });
   }, []);
 
   useEffect(() => {
-    if (hydrated) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(picks));
-  }, [picks, hydrated]);
+    if (!hydrated) return;
+    window.localStorage.setItem(STORAGE_KEYS.half, JSON.stringify(drafts.half));
+    window.localStorage.setItem(STORAGE_KEYS.ppr, JSON.stringify(drafts.ppr));
+  }, [drafts, hydrated]);
 
-  const playerMap = useMemo(() => new Map(players.map((player) => [player.id, player])), []);
+  const picks = drafts[scoring];
+  const scoringPlayers = useMemo(() => playersForScoring(scoring), [scoring]);
+  const playerMap = useMemo(() => new Map(scoringPlayers.map((player) => [player.id, player])), [scoringPlayers]);
   const draftedIds = useMemo(() => new Set(picks.map((pick) => pick.playerId)), [picks]);
-  const available = useMemo(() => players.filter((player) => !draftedIds.has(player.id)).sort((a, b) => a.rank - b.rank), [draftedIds]);
+  const available = useMemo(() => scoringPlayers.filter((player) => !draftedIds.has(player.id)).sort((a, b) => a.rank - b.rank), [draftedIds, scoringPlayers]);
   const roster = useMemo(() => picks.filter((pick) => pick.mine).map((pick) => playerMap.get(pick.playerId)).filter((player): player is Player => Boolean(player)), [picks, playerMap]);
   const overall = Math.min(picks.length + 1, TEAM_COUNT * ROUNDS);
   const current = draftCoordinates(overall);
@@ -241,8 +257,8 @@ export default function Home() {
   const upcomingOurPick = nextOurPick(overall);
   const afterThat = nextOurPick(upcomingOurPick + 1);
   const recommendations = useMemo(
-    () => available.map((player) => recommendationFor(player, available, roster, overall)).sort((a, b) => b.score - a.score).slice(0, 8),
-    [available, roster, overall],
+    () => available.map((player) => recommendationFor(player, available, roster, overall, scoring)).sort((a, b) => b.score - a.score).slice(0, 8),
+    [available, roster, overall, scoring],
   );
   const featured = recommendations[0];
   const rosterSlots = assignRosterSlots(roster);
@@ -260,21 +276,27 @@ export default function Home() {
 
   function recordPick(player: Player, mine: boolean) {
     if (draftedIds.has(player.id) || picks.length >= TEAM_COUNT * ROUNDS) return;
-    setPicks((currentPicks) => [...currentPicks, { playerId: player.id, mine, at: currentPicks.length + 1 }]);
+    setDrafts((currentDrafts) => ({
+      ...currentDrafts,
+      [scoring]: [...currentDrafts[scoring], { playerId: player.id, mine, at: currentDrafts[scoring].length + 1 }],
+    }));
     setQuery("");
   }
 
-  function undoPick() { setPicks((currentPicks) => currentPicks.slice(0, -1)); }
+  function undoPick() { setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: currentDrafts[scoring].slice(0, -1) })); }
   function resetDraft() {
-    if (window.confirm("Reset the entire draft? This removes every logged pick.")) setPicks([]);
+    if (window.confirm(`Reset the entire ${scoring === "ppr" ? "full-PPR" : "half-PPR"} draft? This removes every logged pick in this tab.`)) {
+      setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: [] }));
+    }
   }
 
   function exportDraft() {
-    const payload = JSON.stringify({ league: "10-team half-PPR, pick 10", picks }, null, 2);
+    const format = scoring === "ppr" ? "full-PPR" : "half-PPR";
+    const payload = JSON.stringify({ league: `10-team ${format}, pick 10`, picks }, null, 2);
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "half-point-draft.json";
+    anchor.download = `${scoring === "ppr" ? "full-ppr" : "half-point"}-draft.json`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -288,20 +310,33 @@ export default function Home() {
         const parsed = JSON.parse(String(reader.result));
         const incoming = Array.isArray(parsed) ? parsed : parsed.picks;
         if (!Array.isArray(incoming)) throw new Error("Invalid draft file");
-        setPicks(incoming.filter((pick) => typeof pick.playerId === "string" && playerMap.has(pick.playerId)).slice(0, TEAM_COUNT * ROUNDS));
+        const imported = incoming.filter((pick) => typeof pick.playerId === "string" && playerMap.has(pick.playerId)).slice(0, TEAM_COUNT * ROUNDS);
+        setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: imported }));
       } catch {
-        window.alert("That file is not a valid Half Point draft export.");
+        window.alert(`That file is not a valid ${scoring === "ppr" ? "full-PPR" : "half-PPR"} draft export.`);
       }
     };
     reader.readAsText(file);
     event.target.value = "";
   }
 
+  function changeScoring(next: ScoringMode) {
+    setScoring(next);
+    setQuery("");
+    setFilter("ALL");
+    setView("available");
+  }
+
   return (
     <main>
       <header className="topbar">
-        <div className="brandMark">H</div>
-        <div className="brandCopy"><p className="eyebrow">HALF POINT</p><h1>Draft Room</h1></div>
+        <div className="brandMark">{scoring === "ppr" ? "P" : "H"}</div>
+        <div className="brandCopy"><p className="eyebrow">{scoring === "ppr" ? "FULL PPR" : "HALF POINT"}</p><h1>Draft Room</h1></div>
+        <fieldset className="scoringTabs">
+          <legend className="visuallyHidden">Scoring format</legend>
+          <button type="button" aria-pressed={scoring === "half"} className={scoring === "half" ? "selected" : ""} onClick={() => changeScoring("half")}>Half PPR</button>
+          <button type="button" aria-pressed={scoring === "ppr"} className={scoring === "ppr" ? "selected" : ""} onClick={() => changeScoring("ppr")}>Full PPR</button>
+        </fieldset>
         <div className="leaguePill"><span /> 10-team · Pick 10 · Snake</div>
         <div className="strategyPill">UPSIDE-FIRST</div>
         <div className="headerActions">
@@ -328,7 +363,7 @@ export default function Home() {
           {featured ? <>
             <div className="featuredName"><span className={`posBadge ${featured.player.pos.toLowerCase()}`}>{featured.player.pos}</span><h3>{featured.player.name}</h3></div>
             <p>{featured.explanation}</p>
-            <div className="featuredMeta"><span>{featured.player.team}</span><span>Bye {featured.player.bye}</span><span>Half-PPR #{featured.player.rank}</span><span>Age {featured.strategy.age || "—"}</span><span>Upside {featured.strategy.upside}/10</span><span>Availability {featured.strategy.availability}/10</span><span>{featured.strategy.injuryStatus ?? "No current designation"}</span></div>
+            <div className="featuredMeta"><span>{featured.player.team}</span><span>Bye {featured.player.bye}</span><span>{scoring === "ppr" ? "Full-PPR" : "Half-PPR"} #{featured.player.rank}</span><span>Age {featured.strategy.age || "—"}</span><span>Upside {featured.strategy.upside}/10</span><span>Availability {featured.strategy.availability}/10</span><span>{featured.strategy.injuryStatus ?? "No current designation"}</span></div>
             <div className="featuredActions"><button className="primaryButton" onClick={() => recordPick(featured.player, true)}>Draft for me</button><button className="secondaryButton dark" onClick={() => recordPick(featured.player, false)}>Taken by another team</button></div>
           </> : <h3>Draft complete</h3>}
         </div>
@@ -344,7 +379,7 @@ export default function Home() {
           <div className="boardHeader"><span>RK</span><span>PLAYER</span><span>TIER</span><span>FIT</span><span>ACTION</span></div>
           <div className="playerList">
             {shownPlayers.map((player) => {
-              const item = recommendationFor(player, available, roster, overall);
+              const item = recommendationFor(player, available, roster, overall, scoring);
               const pick = picks.find((candidate) => candidate.playerId === player.id);
               return <article className="playerRow" key={player.id}>
                 <span className="rank">{String(player.rank).padStart(3, "0")}</span>
@@ -360,14 +395,14 @@ export default function Home() {
         <aside className="rosterPanel">
           <div className="panelHeading"><div><p className="eyebrow">TEAM 10</p><h3>Your roster</h3></div><span className="rosterCount">{roster.length}/16</span></div>
           <div className="rosterSlots">{rosterSlots.map((slot) => <div className={`rosterSlot ${slot.player ? "filled" : ""}`} key={slot.key}><span>{slot.label}</span>{slot.player ? <div><strong>{slot.player.name}</strong><small>{slot.player.pos} · {slot.player.team} · Bye {slot.player.bye}</small></div> : <em>Open slot</em>}</div>)}</div>
-          <div className="rosterNote"><strong>Upside-first logic</strong><p>Ceiling and availability carry the strongest weight (1.6×), followed by youth (1.15×). Floor is not penalized, but active injury risk and an avoidable reach can override raw upside.</p></div>
+          <div className="rosterNote"><strong>Upside-first, roster-aware</strong><p>Ceiling and availability carry the strongest weight (1.6×), followed by youth (1.15×). The board avoids a third QB, reserves room for every required starter, and forces D/ST and kicker into the closing rounds when still open.</p></div>
         </aside>
       </div>
 
       <footer>
-        <div><strong>Half Point Draft Room</strong><span>Built for a 10-team, half-PPR snake draft from slot 10.</span></div>
-        <div className="footerLinks"><a href="https://www.fantasypros.com/nfl/cheatsheets/top-half-ppr-players.php" target="_blank" rel="noreferrer">2026 rankings baseline ↗</a><a href="https://docs.sleeper.com/" target="_blank" rel="noreferrer">Player profile data ↗</a><button onClick={resetDraft}>Reset draft</button></div>
-        <p>Rankings and current injury designations refreshed {RANKINGS_REFRESHED}. Availability scores also include a small manually reviewed recurring-risk adjustment. Recommendations are decision support, not medical advice or a guarantee of performance.</p>
+        <div><strong>Fantasy Draft Room</strong><span>Built for 10-team half-PPR and full-PPR snake drafts from slot 10.</span></div>
+        <div className="footerLinks"><a href={scoring === "ppr" ? "https://www.fantasypros.com/nfl/rankings/ppr-cheatsheets.php" : "https://www.fantasypros.com/nfl/rankings/half-point-ppr-cheatsheets.php"} target="_blank" rel="noreferrer">2026 {scoring === "ppr" ? "full-PPR" : "half-PPR"} rankings ↗</a><a href="https://docs.sleeper.com/" target="_blank" rel="noreferrer">Player profile data ↗</a><button onClick={resetDraft}>Reset this tab</button></div>
+        <p>{scoring === "ppr" ? "Full-PPR" : "Half-PPR"} rankings refreshed {scoring === "ppr" ? PPR_RANKINGS_REFRESHED : RANKINGS_REFRESHED}; player status refreshed {PLAYER_PROFILES_REFRESHED}. Availability scores include a small manually reviewed recurring-risk adjustment. Recommendations are decision support, not medical advice or a guarantee of performance.</p>
       </footer>
     </main>
   );

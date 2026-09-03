@@ -21,9 +21,12 @@ test("server-renders the finished draft room", async () => {
   assert.match(html, /10-team · Pick 10 · Snake/);
   assert.match(html, /Track the room\./);
   assert.match(html, /1\.10 in 9 picks/);
-  assert.match(html, /2026 rankings baseline/);
+  assert.match(html, /Fantasy Draft Room/);
   assert.match(html, /UPSIDE-FIRST/);
-  assert.match(html, /Ceiling and availability carry the strongest weight/);
+  assert.match(html, /Half PPR/);
+  assert.match(html, /Full PPR/);
+  assert.match(html, /Upside-first, roster-aware/);
+  assert.match(html, /avoids a third QB/);
   assert.match(html, /August 29, 2026/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
