@@ -6,6 +6,7 @@ import { PLAYER_PROFILES_REFRESHED, profileFor } from "./player-profiles";
 import { RANKINGS_REFRESHED } from "./current-rankings";
 import { PPR_RANKINGS_REFRESHED } from "./ppr-rankings";
 import { rosterGuardrails } from "./roster-guardrails";
+import { LEAGUE_CONFIGS, LeagueConfig } from "./league-config";
 
 type DraftPick = { playerId: string; mine: boolean; at: number };
 type BoardView = "available" | "drafted";
@@ -16,7 +17,6 @@ const STORAGE_KEYS: Record<ScoringMode, string> = {
   ppr: "full-ppr-draft-room-v1",
 };
 const TEAM_COUNT = 10;
-const ROUNDS = 16;
 const DRAFT_SLOT = 10;
 const POSITIONS: Filter[] = ["ALL", "RB", "WR", "QB", "TE", "DST", "K"];
 
@@ -34,11 +34,11 @@ function isOurPick(overall: number) {
   return draftCoordinates(overall).team === DRAFT_SLOT;
 }
 
-function nextOurPick(from: number) {
-  for (let pick = from; pick <= TEAM_COUNT * ROUNDS; pick += 1) {
+function nextOurPick(from: number, maxOverall: number) {
+  for (let pick = from; pick <= maxOverall; pick += 1) {
     if (isOurPick(pick)) return pick;
   }
-  return TEAM_COUNT * ROUNDS;
+  return maxOverall;
 }
 
 function pickLabel(overall: number) {
@@ -98,11 +98,11 @@ function strategyScores(player: Player) {
   return { ...profile, youth, upside, availability };
 }
 
-function recommendationFor(player: Player, available: Player[], roster: Player[], overall: number, scoring: ScoringMode) {
+function recommendationFor(player: Player, available: Player[], roster: Player[], overall: number, scoring: ScoringMode, config: LeagueConfig) {
   const round = Math.ceil(overall / TEAM_COUNT);
   const counts = positionCounts(roster);
   const skillCount = counts.RB + counts.WR + counts.TE;
-  const nextAt = nextOurPick(overall + 1);
+  const nextAt = nextOurPick(overall + 1, TEAM_COUNT * config.rounds);
   const samePosition = available.filter((candidate) => candidate.pos === player.pos && candidate.rank > player.rank);
   const nextAtPosition = samePosition[0];
   const tierCliff = nextAtPosition ? Math.max(0, nextAtPosition.tier - player.tier) : 1;
@@ -154,7 +154,11 @@ function recommendationFor(player: Player, available: Player[], roster: Player[]
     lineupReasons.push(round >= 14 ? `fills your ${player.pos === "DST" ? "defense" : "kicker"} slot` : "is best saved for the final rounds");
   }
 
-  const guardrail = rosterGuardrails(player.pos, counts, roster.length, round);
+  const guardrail = rosterGuardrails(player.pos, counts, roster.length, round, {
+    rosterLimit: config.rosterSize,
+    flexSlots: config.flexSlots,
+    totalRounds: config.rounds,
+  });
   need += guardrail.adjustment;
 
   const scarcity = clamp(tierCliff * 5 + (nextAtPosition ? nextAtPosition.rank - player.rank : 4) * 0.35, 0, 10);
@@ -180,7 +184,7 @@ function recommendationFor(player: Player, available: Player[], roster: Player[]
   return { player, score, fit, explanation, strategy };
 }
 
-function assignRosterSlots(roster: Player[]) {
+function assignRosterSlots(roster: Player[], config: LeagueConfig) {
   const slots = [
     { key: "QB", label: "QB", accepts: ["QB"] },
     { key: "RB1", label: "RB", accepts: ["RB"] },
@@ -188,21 +192,22 @@ function assignRosterSlots(roster: Player[]) {
     { key: "WR1", label: "WR", accepts: ["WR"] },
     { key: "WR2", label: "WR", accepts: ["WR"] },
     { key: "TE", label: "TE", accepts: ["TE"] },
-    { key: "FLEX", label: "FLEX", accepts: ["RB", "WR", "TE"] },
-    { key: "DST", label: "D/ST", accepts: ["DST"] },
-    { key: "K", label: "K", accepts: ["K"] },
-    ...Array.from({ length: 7 }, (_, index) => ({ key: `BN${index + 1}`, label: "BN", accepts: ["QB", "RB", "WR", "TE", "DST", "K"] })),
+    ...Array.from({ length: config.flexSlots }, (_, index) => ({ key: `FLEX${index + 1}`, label: config.flexSlots > 1 ? "W/R/T" : "FLEX", accepts: ["RB", "WR", "TE"] })),
+    ...(config.flexSlots > 1
+      ? [{ key: "K", label: "K", accepts: ["K"] }, { key: "DST", label: "DEF", accepts: ["DST"] }]
+      : [{ key: "DST", label: "D/ST", accepts: ["DST"] }, { key: "K", label: "K", accepts: ["K"] }]),
+    ...Array.from({ length: config.benchSlots }, (_, index) => ({ key: `BN${index + 1}`, label: "BN", accepts: ["QB", "RB", "WR", "TE", "DST", "K"] })),
     { key: "IR", label: "IR", accepts: [] as string[] },
   ];
   const assigned = new Map<string, Player>();
 
   roster.forEach((player) => {
-    const primary = slots.find((slot) => !assigned.has(slot.key) && slot.key !== "FLEX" && !slot.key.startsWith("BN") && slot.accepts.includes(player.pos));
+    const primary = slots.find((slot) => !assigned.has(slot.key) && !slot.key.startsWith("FLEX") && !slot.key.startsWith("BN") && slot.accepts.includes(player.pos));
     if (primary) {
       assigned.set(primary.key, player);
       return;
     }
-    const flex = slots.find((slot) => slot.key === "FLEX" && !assigned.has(slot.key) && slot.accepts.includes(player.pos));
+    const flex = slots.find((slot) => slot.key.startsWith("FLEX") && !assigned.has(slot.key) && slot.accepts.includes(player.pos));
     if (flex) {
       assigned.set(flex.key, player);
       return;
@@ -246,22 +251,24 @@ export default function Home() {
   }, [drafts, hydrated]);
 
   const picks = drafts[scoring];
+  const config = LEAGUE_CONFIGS[scoring];
+  const draftLimit = TEAM_COUNT * config.rounds;
   const scoringPlayers = useMemo(() => playersForScoring(scoring), [scoring]);
   const playerMap = useMemo(() => new Map(scoringPlayers.map((player) => [player.id, player])), [scoringPlayers]);
   const draftedIds = useMemo(() => new Set(picks.map((pick) => pick.playerId)), [picks]);
   const available = useMemo(() => scoringPlayers.filter((player) => !draftedIds.has(player.id)).sort((a, b) => a.rank - b.rank), [draftedIds, scoringPlayers]);
   const roster = useMemo(() => picks.filter((pick) => pick.mine).map((pick) => playerMap.get(pick.playerId)).filter((player): player is Player => Boolean(player)), [picks, playerMap]);
-  const overall = Math.min(picks.length + 1, TEAM_COUNT * ROUNDS);
+  const overall = Math.min(picks.length + 1, draftLimit);
   const current = draftCoordinates(overall);
   const ourTurn = isOurPick(overall);
-  const upcomingOurPick = nextOurPick(overall);
-  const afterThat = nextOurPick(upcomingOurPick + 1);
+  const upcomingOurPick = nextOurPick(overall, draftLimit);
+  const afterThat = nextOurPick(upcomingOurPick + 1, draftLimit);
   const recommendations = useMemo(
-    () => available.map((player) => recommendationFor(player, available, roster, overall, scoring)).sort((a, b) => b.score - a.score).slice(0, 8),
-    [available, roster, overall, scoring],
+    () => available.map((player) => recommendationFor(player, available, roster, overall, scoring, config)).sort((a, b) => b.score - a.score).slice(0, 8),
+    [available, roster, overall, scoring, config],
   );
   const featured = recommendations[0];
-  const rosterSlots = assignRosterSlots(roster);
+  const rosterSlots = assignRosterSlots(roster, config);
 
   const shownPlayers = useMemo(() => {
     const source = view === "available"
@@ -275,7 +282,7 @@ export default function Home() {
   }, [available, filter, picks, playerMap, query, view]);
 
   function recordPick(player: Player, mine: boolean) {
-    if (draftedIds.has(player.id) || picks.length >= TEAM_COUNT * ROUNDS) return;
+    if (draftedIds.has(player.id) || picks.length >= draftLimit) return;
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       [scoring]: [...currentDrafts[scoring], { playerId: player.id, mine, at: currentDrafts[scoring].length + 1 }],
@@ -310,7 +317,7 @@ export default function Home() {
         const parsed = JSON.parse(String(reader.result));
         const incoming = Array.isArray(parsed) ? parsed : parsed.picks;
         if (!Array.isArray(incoming)) throw new Error("Invalid draft file");
-        const imported = incoming.filter((pick) => typeof pick.playerId === "string" && playerMap.has(pick.playerId)).slice(0, TEAM_COUNT * ROUNDS);
+        const imported = incoming.filter((pick) => typeof pick.playerId === "string" && playerMap.has(pick.playerId)).slice(0, draftLimit);
         setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: imported }));
       } catch {
         window.alert(`That file is not a valid ${scoring === "ppr" ? "full-PPR" : "half-PPR"} draft export.`);
@@ -337,7 +344,7 @@ export default function Home() {
           <button type="button" aria-pressed={scoring === "half"} className={scoring === "half" ? "selected" : ""} onClick={() => changeScoring("half")}>Half PPR</button>
           <button type="button" aria-pressed={scoring === "ppr"} className={scoring === "ppr" ? "selected" : ""} onClick={() => changeScoring("ppr")}>Full PPR</button>
         </fieldset>
-        <div className="leaguePill"><span /> 10-team · Pick 10 · Snake</div>
+        <div className="leaguePill"><span /> 10-team · Pick 10 · {scoring === "ppr" ? "2 W/R/T · 5 BN" : "1 FLEX · 7 BN"} · Snake</div>
         <div className="strategyPill">UPSIDE-FIRST</div>
         <div className="headerActions">
           <button className="quietButton" onClick={undoPick} disabled={!picks.length}>Undo</button>
@@ -349,7 +356,7 @@ export default function Home() {
 
       <section className="draftStatus">
         <div className="statusIntro">
-          <p className="eyebrow">{ourTurn ? "YOU’RE ON THE CLOCK" : `PICK ${overall} OF ${TEAM_COUNT * ROUNDS}`}</p>
+          <p className="eyebrow">{ourTurn ? "YOU’RE ON THE CLOCK" : `PICK ${overall} OF ${draftLimit}`}</p>
           <h2>{ourTurn ? "Make the turn count." : "Track the room."}</h2>
           <p>{ourTurn ? `You pick now at ${pickLabel(overall)}${afterThat === overall + 1 ? ` and again at ${pickLabel(afterThat)}` : ""}.` : `Team ${current.team} is picking. You’re up at ${pickLabel(upcomingOurPick)} in ${upcomingOurPick - overall} picks.`}</p>
         </div>
@@ -379,7 +386,7 @@ export default function Home() {
           <div className="boardHeader"><span>RK</span><span>PLAYER</span><span>TIER</span><span>FIT</span><span>ACTION</span></div>
           <div className="playerList">
             {shownPlayers.map((player) => {
-              const item = recommendationFor(player, available, roster, overall, scoring);
+              const item = recommendationFor(player, available, roster, overall, scoring, config);
               const pick = picks.find((candidate) => candidate.playerId === player.id);
               return <article className="playerRow" key={player.id}>
                 <span className="rank">{String(player.rank).padStart(3, "0")}</span>
@@ -393,7 +400,7 @@ export default function Home() {
         </section>
 
         <aside className="rosterPanel">
-          <div className="panelHeading"><div><p className="eyebrow">TEAM 10</p><h3>Your roster</h3></div><span className="rosterCount">{roster.length}/16</span></div>
+          <div className="panelHeading"><div><p className="eyebrow">TEAM 10</p><h3>Your roster</h3></div><span className="rosterCount">{roster.length}/{config.rosterSize}</span></div>
           <div className="rosterSlots">{rosterSlots.map((slot) => <div className={`rosterSlot ${slot.player ? "filled" : ""}`} key={slot.key}><span>{slot.label}</span>{slot.player ? <div><strong>{slot.player.name}</strong><small>{slot.player.pos} · {slot.player.team} · Bye {slot.player.bye}</small></div> : <em>Open slot</em>}</div>)}</div>
           <div className="rosterNote"><strong>Upside-first, roster-aware</strong><p>Ceiling and availability carry the strongest weight (1.6×), followed by youth (1.15×). The board avoids a third QB, reserves room for every required starter, and forces D/ST and kicker into the closing rounds when still open.</p></div>
         </aside>

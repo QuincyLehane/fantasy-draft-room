@@ -18,7 +18,8 @@ test("server-renders the finished draft room", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
   assert.match(html, /Half Point Draft Room/);
-  assert.match(html, /10-team · Pick 10 · Snake/);
+  assert.match(html, /10-team · Pick 10/);
+  assert.match(html, /1 FLEX · 7 BN/);
   assert.match(html, /Track the room\./);
   assert.match(html, /1\.10 in 9 picks/);
   assert.match(html, /Fantasy Draft Room/);
