@@ -13,14 +13,14 @@ test("full-PPR rankings use the dedicated PPR board", () => {
   assert.equal(pprRankingFor("Jahmyr Gibbs", 99, 9, "DET", 6).rank, 2);
 });
 
-test("the PPR league uses two flexes, five bench spots, and 15 rounds", () => {
-  assert.deepEqual(LEAGUE_CONFIGS.ppr, { draftSlot: 2, rounds: 15, rosterSize: 15, flexSlots: 2, benchSlots: 5 });
+test("the PPR league uses 12 teams, two flexes, five bench spots, and 15 rounds", () => {
+  assert.deepEqual(LEAGUE_CONFIGS.ppr, { teamCount: 12, draftSlot: 2, rounds: 15, rosterSize: 15, flexSlots: 2, benchSlots: 5 });
 });
 
-test("the PPR snake draft follows team 2's turn sequence", () => {
-  assert.equal(nextTeamPick(1, 150, 2, 10), 2);
-  assert.equal(nextTeamPick(3, 150, 2, 10), 19);
-  assert.equal(nextTeamPick(20, 150, 2, 10), 22);
+test("the 12-team PPR snake draft follows team 2's turn sequence", () => {
+  assert.equal(nextTeamPick(1, 180, 2, 12), 2);
+  assert.equal(nextTeamPick(3, 180, 2, 12), 23);
+  assert.equal(nextTeamPick(24, 180, 2, 12), 26);
 });
 
 test("both PPR flex positions count as required starters", () => {

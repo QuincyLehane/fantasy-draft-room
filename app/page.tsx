@@ -17,7 +17,6 @@ const STORAGE_KEYS: Record<ScoringMode, string> = {
   half: "half-point-draft-room-v1",
   ppr: "full-ppr-draft-room-v1",
 };
-const TEAM_COUNT = 10;
 const POSITIONS: Filter[] = ["ALL", "RB", "WR", "QB", "TE", "DST", "K"];
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -75,10 +74,10 @@ function strategyScores(player: Player) {
 }
 
 function recommendationFor(player: Player, available: Player[], roster: Player[], overall: number, scoring: ScoringMode, config: LeagueConfig) {
-  const round = Math.ceil(overall / TEAM_COUNT);
+  const round = Math.ceil(overall / config.teamCount);
   const counts = positionCounts(roster);
   const skillCount = counts.RB + counts.WR + counts.TE;
-  const nextAt = nextTeamPick(overall + 1, TEAM_COUNT * config.rounds, config.draftSlot, TEAM_COUNT);
+  const nextAt = nextTeamPick(overall + 1, config.teamCount * config.rounds, config.draftSlot, config.teamCount);
   const samePosition = available.filter((candidate) => candidate.pos === player.pos && candidate.rank > player.rank);
   const nextAtPosition = samePosition[0];
   const tierCliff = nextAtPosition ? Math.max(0, nextAtPosition.tier - player.tier) : 1;
@@ -228,17 +227,17 @@ export default function Home() {
 
   const picks = drafts[scoring];
   const config = LEAGUE_CONFIGS[scoring];
-  const draftLimit = TEAM_COUNT * config.rounds;
+  const draftLimit = config.teamCount * config.rounds;
   const scoringPlayers = useMemo(() => playersForScoring(scoring), [scoring]);
   const playerMap = useMemo(() => new Map(scoringPlayers.map((player) => [player.id, player])), [scoringPlayers]);
   const draftedIds = useMemo(() => new Set(picks.map((pick) => pick.playerId)), [picks]);
   const available = useMemo(() => scoringPlayers.filter((player) => !draftedIds.has(player.id)).sort((a, b) => a.rank - b.rank), [draftedIds, scoringPlayers]);
   const roster = useMemo(() => picks.filter((pick) => pick.mine).map((pick) => playerMap.get(pick.playerId)).filter((player): player is Player => Boolean(player)), [picks, playerMap]);
   const overall = Math.min(picks.length + 1, draftLimit);
-  const current = draftCoordinates(overall, TEAM_COUNT);
-  const ourTurn = isTeamPick(overall, config.draftSlot, TEAM_COUNT);
-  const upcomingOurPick = nextTeamPick(overall, draftLimit, config.draftSlot, TEAM_COUNT);
-  const afterThat = nextTeamPick(upcomingOurPick + 1, draftLimit, config.draftSlot, TEAM_COUNT);
+  const current = draftCoordinates(overall, config.teamCount);
+  const ourTurn = isTeamPick(overall, config.draftSlot, config.teamCount);
+  const upcomingOurPick = nextTeamPick(overall, draftLimit, config.draftSlot, config.teamCount);
+  const afterThat = nextTeamPick(upcomingOurPick + 1, draftLimit, config.draftSlot, config.teamCount);
   const recommendations = useMemo(
     () => available.map((player) => recommendationFor(player, available, roster, overall, scoring, config)).sort((a, b) => b.score - a.score).slice(0, 8),
     [available, roster, overall, scoring, config],
@@ -275,7 +274,7 @@ export default function Home() {
 
   function exportDraft() {
     const format = scoring === "ppr" ? "full-PPR" : "half-PPR";
-    const payload = JSON.stringify({ league: `10-team ${format}, pick ${config.draftSlot}`, picks }, null, 2);
+    const payload = JSON.stringify({ league: `${config.teamCount}-team ${format}, pick ${config.draftSlot}`, picks }, null, 2);
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -320,7 +319,7 @@ export default function Home() {
           <button type="button" aria-pressed={scoring === "half"} className={scoring === "half" ? "selected" : ""} onClick={() => changeScoring("half")}>Half PPR</button>
           <button type="button" aria-pressed={scoring === "ppr"} className={scoring === "ppr" ? "selected" : ""} onClick={() => changeScoring("ppr")}>Full PPR</button>
         </fieldset>
-        <div className="leaguePill"><span />{` 10-team · Pick ${config.draftSlot} · ${scoring === "ppr" ? "2 W/R/T · 5 BN" : "1 FLEX · 7 BN"} · Snake`}</div>
+        <div className="leaguePill"><span />{` ${config.teamCount}-team · Pick ${config.draftSlot} · ${scoring === "ppr" ? "2 W/R/T · 5 BN" : "1 FLEX · 7 BN"} · Snake`}</div>
         <div className="strategyPill">UPSIDE-FIRST</div>
         <div className="headerActions">
           <button className="quietButton" onClick={undoPick} disabled={!picks.length}>Undo</button>
@@ -334,10 +333,10 @@ export default function Home() {
         <div className="statusIntro">
           <p className="eyebrow">{ourTurn ? "YOU’RE ON THE CLOCK" : `PICK ${overall} OF ${draftLimit}`}</p>
           <h2>{ourTurn ? "Make the turn count." : "Track the room."}</h2>
-          <p>{ourTurn ? `You pick now at ${pickLabel(overall, TEAM_COUNT)}${afterThat === overall + 1 ? ` and again at ${pickLabel(afterThat, TEAM_COUNT)}` : ""}.` : `Team ${current.team} is picking. You’re up at ${pickLabel(upcomingOurPick, TEAM_COUNT)} in ${upcomingOurPick - overall} picks.`}</p>
+          <p>{ourTurn ? `You pick now at ${pickLabel(overall, config.teamCount)}${afterThat === overall + 1 ? ` and again at ${pickLabel(afterThat, config.teamCount)}` : ""}.` : `Team ${current.team} is picking. You’re up at ${pickLabel(upcomingOurPick, config.teamCount)} in ${upcomingOurPick - overall} picks.`}</p>
         </div>
-        <div className={`clockCard ${ourTurn ? "active" : ""}`}><span>{ourTurn ? "YOUR PICK" : "ON THE CLOCK"}</span><strong>{pickLabel(overall, TEAM_COUNT)}</strong><small>ROUND {current.round} · OVERALL {overall}</small></div>
-        <div className="turnPlan"><p className="eyebrow">NEXT TURN</p><div><strong>{pickLabel(upcomingOurPick, TEAM_COUNT)}</strong><span>overall {upcomingOurPick}</span></div><div><strong>{pickLabel(afterThat, TEAM_COUNT)}</strong><span>overall {afterThat}</span></div></div>
+        <div className={`clockCard ${ourTurn ? "active" : ""}`}><span>{ourTurn ? "YOUR PICK" : "ON THE CLOCK"}</span><strong>{pickLabel(overall, config.teamCount)}</strong><small>ROUND {current.round} · OVERALL {overall}</small></div>
+        <div className="turnPlan"><p className="eyebrow">NEXT TURN</p><div><strong>{pickLabel(upcomingOurPick, config.teamCount)}</strong><span>overall {upcomingOurPick}</span></div><div><strong>{pickLabel(afterThat, config.teamCount)}</strong><span>overall {afterThat}</span></div></div>
       </section>
 
       <section className="recommendationStrip">
@@ -383,7 +382,7 @@ export default function Home() {
       </div>
 
       <footer>
-        <div><strong>Fantasy Draft Room</strong><span>Half PPR from slot 10 · Full PPR from slot 2.</span></div>
+        <div><strong>Fantasy Draft Room</strong><span>10-team Half PPR from slot 10 · 12-team Full PPR from slot 2.</span></div>
         <div className="footerLinks"><a href={scoring === "ppr" ? "https://www.fantasypros.com/nfl/rankings/ppr-cheatsheets.php" : "https://www.fantasypros.com/nfl/rankings/half-point-ppr-cheatsheets.php"} target="_blank" rel="noreferrer">2026 {scoring === "ppr" ? "full-PPR" : "half-PPR"} rankings ↗</a><a href="https://docs.sleeper.com/" target="_blank" rel="noreferrer">Player profile data ↗</a><button onClick={resetDraft}>Reset this tab</button></div>
         <p>{scoring === "ppr" ? "Full-PPR" : "Half-PPR"} rankings refreshed {scoring === "ppr" ? PPR_RANKINGS_REFRESHED : RANKINGS_REFRESHED}; player status refreshed {PLAYER_PROFILES_REFRESHED}. Availability scores include a small manually reviewed recurring-risk adjustment. Recommendations are decision support, not medical advice or a guarantee of performance.</p>
       </footer>
