@@ -1,6 +1,8 @@
+import { DRAFT_DAY_RANKINGS_REFRESHED, draftDayRankingFor } from "./draft-day-rankings.ts";
+
 export type CurrentRanking = { rank: number; tier: number; team?: string; bye?: number };
 
-export const RANKINGS_REFRESHED = "August 29, 2026";
+export const RANKINGS_REFRESHED = DRAFT_DAY_RANKINGS_REFRESHED;
 
 // FantasyPros half-PPR expert consensus snapshot. Player seeds keep stable IDs;
 // this map updates order, tier, team, and bye week without remapping saved picks.
@@ -212,6 +214,6 @@ const currentRankings: Record<string, [number, number, string, number]> = {
 
 export function currentRankingFor(name: string, fallbackRank: number, fallbackTier: number, fallbackTeam: string, fallbackBye: number): CurrentRanking {
   if (name === "Jayden Higgins") return { rank: 300, tier: 9, team: fallbackTeam, bye: fallbackBye };
-  const [rank = fallbackRank, tier = fallbackTier, team = fallbackTeam, bye = fallbackBye] = currentRankings[name] ?? [];
+  const [rank = fallbackRank, tier = fallbackTier, team = fallbackTeam, bye = fallbackBye] = draftDayRankingFor("half", name) ?? currentRankings[name] ?? [];
   return { rank, tier, team, bye };
 }

@@ -5,7 +5,7 @@ export type PlayerProfile = {
   recurringRisk?: number;
 };
 
-export const PLAYER_PROFILES_REFRESHED = "September 3, 2026";
+export const PLAYER_PROFILES_REFRESHED = "September 7, 2026";
 
 // Age, experience, and current availability are based on the Sleeper player feed.
 // recurringRisk is a small, manually reviewed penalty for repeated recent absences.
@@ -22,7 +22,7 @@ const sleeperProfiles: Record<string, [number, number, string?]> = {
   "Kyren Williams": [25,4], "Tetairoa McMillan": [23,1], "Tee Higgins": [27,6,"Questionable"],
   "Jeremiyah Love": [21,0,"Questionable"], "Breece Hall": [25,4,"Questionable"], "Javonte Williams": [26,5],
   "Lamar Jackson": [29,8], "Ladd McConkey": [24,2], "Emeka Egbuka": [23,1,"Questionable"],
-  "Josh Jacobs": [28,7], "Jaylen Waddle": [27,5], "Garrett Wilson": [26,4],
+  "Josh Jacobs": [28,7,"Out — Commissioner's Exempt List"], "Jaylen Waddle": [27,5], "Garrett Wilson": [26,4],
   "Colston Loveland": [22,1], "Drake Maye": [23,2], "Terry McLaurin": [30,7],
   "Travis Etienne Jr.": [27,5], "Cam Skattebo": [24,1], "Joe Burrow": [29,6], "Davante Adams": [33,12],
   "Luther Burden III": [22,1,"Questionable"], "Tyler Warren": [24,1,"Questionable"], "D'Andre Swift": [27,6],

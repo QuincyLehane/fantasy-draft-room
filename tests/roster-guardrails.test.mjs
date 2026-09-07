@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { pprRankingFor } from "../app/ppr-rankings.ts";
+import { currentRankingFor } from "../app/current-rankings.ts";
+import { profileFor } from "../app/player-profiles.ts";
 import { rosterGuardrails } from "../app/roster-guardrails.ts";
 import { LEAGUE_CONFIGS } from "../app/league-config.ts";
 import { nextTeamPick } from "../app/draft-order.ts";
@@ -11,6 +13,13 @@ const completeSkillRoster = { QB: 2, RB: 4, WR: 4, TE: 2, DST: 0, K: 0 };
 test("full-PPR rankings use the dedicated PPR board", () => {
   assert.equal(pprRankingFor("Ja'Marr Chase", 99, 9, "CIN", 6).rank, 1);
   assert.equal(pprRankingFor("Jahmyr Gibbs", 99, 9, "DET", 6).rank, 2);
+});
+
+test("draft-day news is reflected in ranks and availability", () => {
+  assert.equal(currentRankingFor("Josh Jacobs", 99, 9, "GB", 11).rank, 155);
+  assert.equal(pprRankingFor("Josh Jacobs", 99, 9, "GB", 11).rank, 148);
+  assert.equal(currentRankingFor("MarShawn Lloyd", 99, 9, "GB", 11).rank, 87);
+  assert.match(profileFor("Josh Jacobs").injuryStatus ?? "", /Out.*Exempt List/);
 });
 
 test("the PPR league uses 12 teams, two flexes, five bench spots, and 15 rounds", () => {

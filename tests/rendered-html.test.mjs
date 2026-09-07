@@ -28,7 +28,7 @@ test("server-renders the finished draft room", async () => {
   assert.match(html, /Full PPR/);
   assert.match(html, /Upside-first, roster-aware/);
   assert.match(html, /avoids a third QB/);
-  assert.match(html, /August 29, 2026/);
+  assert.match(html, /September 7, 2026/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 

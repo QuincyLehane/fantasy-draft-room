@@ -1,6 +1,8 @@
+import { DRAFT_DAY_RANKINGS_REFRESHED, draftDayRankingFor } from "./draft-day-rankings.ts";
+
 export type PprRanking = { rank: number; tier: number; team?: string; bye?: number };
 
-export const PPR_RANKINGS_REFRESHED = "September 3, 2026";
+export const PPR_RANKINGS_REFRESHED = DRAFT_DAY_RANKINGS_REFRESHED;
 
 // FantasyPros full-PPR expert consensus snapshot. The separate map keeps
 // each scoring tab current without changing stable player IDs.
@@ -268,7 +270,6 @@ const pprRankings: Record<string, [number, number, string, number]> = {
 };
 
 export function pprRankingFor(name: string, fallbackRank: number, fallbackTier: number, fallbackTeam: string, fallbackBye: number): PprRanking {
-  const [rank = fallbackRank, tier = fallbackTier, team = fallbackTeam, bye = fallbackBye] = pprRankings[name] ?? [];
+  const [rank = fallbackRank, tier = fallbackTier, team = fallbackTeam, bye = fallbackBye] = draftDayRankingFor("ppr", name) ?? pprRankings[name] ?? [];
   return { rank, tier, team, bye };
 }
-
