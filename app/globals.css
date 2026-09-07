@@ -32,6 +32,12 @@ main { min-height: 100vh; }
 .scoringTabs button:hover:not(.selected) { color: var(--ink); }
 .leaguePill { margin-left: auto; padding: 9px 13px; border: 1px solid var(--line); border-radius: 99px; font-size: 12px; font-weight: 800; white-space: nowrap; }
 .leaguePill span { width: 7px; height: 7px; display: inline-block; margin-right: 7px; border-radius: 50%; background: #4f9c66; }
+.sleeperPill { padding: 8px 11px; border: 1px solid #7aa5dc; border-radius: 99px; color: #315d96; font-size: 9px; font-weight: 900; letter-spacing: .08em; white-space: nowrap; }
+.sleeperPill span { width: 7px; height: 7px; display: inline-block; margin-right: 7px; border-radius: 50%; background: #3f7fcf; }
+.sleeperPill.connecting span { animation: sleeperPulse 1.2s ease-in-out infinite; }
+.sleeperPill.error { border-color: #d3946f; color: #985025; }
+.sleeperPill.error span { background: var(--orange); }
+@keyframes sleeperPulse { 50% { opacity: .25; } }
 .strategyPill { padding: 8px 11px; border-radius: 99px; background: var(--ink); color: var(--orange); font-size: 9px; font-weight: 900; letter-spacing: .12em; white-space: nowrap; }
 .headerActions { display: flex; gap: 6px; }
 .quietButton { padding: 9px 11px; border: 0; background: transparent; border-radius: 8px; color: #5e6a63; font-size: 12px; font-weight: 800; cursor: pointer; }
@@ -78,6 +84,8 @@ main { min-height: 100vh; }
 .alternatives > button small { color: #8f9c94; font-size: 9px; }
 .alternatives > button b { color: var(--orange); font-size: 18px; }
 .alternatives > button:hover strong { color: var(--orange); }
+.alternatives > button:disabled { opacity: 1; cursor: default; }
+.alternatives > button:disabled:hover strong { color: white; }
 
 .workspace { display: grid; grid-template-columns: minmax(0,1fr) 340px; gap: 0; }
 .boardPanel { min-width: 0; padding: 38px clamp(18px,4vw,64px) 80px; }
@@ -115,6 +123,7 @@ main { min-height: 100vh; }
 .rowActions button.mine { border-color: var(--ink); background: var(--ink); color: white; }
 .draftedBy { color: var(--muted); font-size: 9px; font-weight: 900; text-align: right; letter-spacing: .06em; }
 .draftedBy.mine { color: var(--orange-dark); }
+.liveSynced { color: #315d96; font-size: 9px; font-weight: 900; text-align: right; letter-spacing: .06em; }
 .emptyState { padding: 50px 10px; border-top: 1px solid var(--line); color: var(--muted); text-align: center; font: 500 18px Georgia,serif; }
 
 .rosterCount { padding: 6px 9px; border-radius: 99px; background: var(--ink); color: white; font-size: 10px; font-weight: 900; }
@@ -146,7 +155,7 @@ footer > p { grid-column: 1 / -1; margin: 0; }
 }
 
 @media (max-width: 780px) {
-  .topbar { flex-wrap: wrap; }.scoringTabs { order: 3; margin: 0; }.leaguePill { order: 4; margin: 0; }.strategyPill { order: 5; }.headerActions { margin-left: auto; }.quietButton { padding-inline: 7px; }
+  .topbar { flex-wrap: wrap; }.scoringTabs { order: 3; margin: 0; }.leaguePill { order: 4; margin: 0; }.sleeperPill { order: 5; }.strategyPill { order: 6; }.headerActions { margin-left: auto; }.quietButton { padding-inline: 7px; }
   .draftStatus { grid-template-columns: 1fr; padding-top: 30px; }.statusIntro h2 { font-size: 46px; }.clockCard { min-height: 130px; }.clockCard strong { font-size: 46px; }
   .recommendationStrip { grid-template-columns: 1fr; }.recommendationLead,.fitGauge { border-right: 0; border-bottom: 1px solid #435048; }.fitGauge { padding-block: 24px; }.fitGauge > strong { font-size: 58px; }.alternatives { display: block; }.alternatives > button { display: grid; }
   .workspace { grid-template-columns: 1fr; }.rosterPanel { order: -1; border-left: 0; border-bottom: 1px solid var(--line); }.rosterSlots { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }.rosterNote { display: none; }
@@ -155,7 +164,7 @@ footer > p { grid-column: 1 / -1; margin: 0; }
 }
 
 @media (max-width: 520px) {
-  .brandCopy { display: none; }.scoringTabs { width: 100%; order: 6; }.scoringTabs button { flex: 1; }.leaguePill { display: none; }.strategyPill { display: none; }.headerActions { margin-left: auto; }
+  .brandCopy { display: none; }.scoringTabs { width: 100%; order: 7; }.scoringTabs button { flex: 1; }.leaguePill { display: none; }.strategyPill { display: none; }.headerActions { margin-left: auto; }
   .recommendationLead { padding-block: 28px; }.featuredName h3 { font-size: 31px; }.featuredActions { flex-direction: column; }.primaryButton,.secondaryButton { width: 100%; }
   .rosterSlots { grid-template-columns: 1fr; }.rosterSlot:nth-child(n+10) { display: none; }
   .panelHeading { align-items: flex-start; flex-direction: column; }.viewToggle { width: 100%; }.viewToggle button { flex: 1; }

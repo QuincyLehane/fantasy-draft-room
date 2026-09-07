@@ -8,10 +8,12 @@ import { PPR_RANKINGS_REFRESHED } from "./ppr-rankings";
 import { rosterGuardrails } from "./roster-guardrails";
 import { LEAGUE_CONFIGS, LeagueConfig } from "./league-config";
 import { draftCoordinates, isTeamPick, nextTeamPick, pickLabel } from "./draft-order";
+import { mapSleeperPicks, SLEEPER_PICKS_URL } from "./sleeper-sync";
 
 type DraftPick = { playerId: string; mine: boolean; at: number };
 type BoardView = "available" | "drafted";
 type Filter = "ALL" | Position;
+type SleeperSyncState = { status: "connecting" | "live" | "error"; lastUpdated?: Date; unmatched: number };
 
 const STORAGE_KEYS: Record<ScoringMode, string> = {
   half: "half-point-draft-room-v1",
@@ -200,7 +202,9 @@ export default function Home() {
   const [filter, setFilter] = useState<Filter>("ALL");
   const [view, setView] = useState<BoardView>("available");
   const [hydrated, setHydrated] = useState(false);
+  const [sleeperSync, setSleeperSync] = useState<SleeperSyncState>({ status: "connecting", unmatched: 0 });
   const importRef = useRef<HTMLInputElement>(null);
+  const pprPlayers = useMemo(() => playersForScoring("ppr"), []);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -225,6 +229,48 @@ export default function Home() {
     window.localStorage.setItem(STORAGE_KEYS.ppr, JSON.stringify(drafts.ppr));
   }, [drafts, hydrated]);
 
+  useEffect(() => {
+    if (!hydrated) return;
+    let disposed = false;
+    let syncing = false;
+
+    async function syncSleeperPicks() {
+      if (syncing) return;
+      syncing = true;
+      try {
+        const response = await fetch(`${SLEEPER_PICKS_URL}?live=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Sleeper returned ${response.status}`);
+        const result = mapSleeperPicks(await response.json(), pprPlayers);
+        if (disposed) return;
+        setDrafts((currentDrafts) => {
+          const current = currentDrafts.ppr;
+          const unchanged = current.length === result.picks.length && current.every((pick, index) => {
+            const next = result.picks[index];
+            return pick.playerId === next.playerId && pick.mine === next.mine && pick.at === next.at;
+          });
+          return unchanged ? currentDrafts : { ...currentDrafts, ppr: result.picks };
+        });
+        setSleeperSync({ status: "live", lastUpdated: new Date(), unmatched: result.unmatched });
+      } catch {
+        if (!disposed) setSleeperSync((current) => ({ ...current, status: "error" }));
+      } finally {
+        syncing = false;
+      }
+    }
+
+    void syncSleeperPicks();
+    const interval = window.setInterval(syncSleeperPicks, 3000);
+    const syncWhenVisible = () => { if (document.visibilityState === "visible") void syncSleeperPicks(); };
+    window.addEventListener("focus", syncWhenVisible);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", syncWhenVisible);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [hydrated, pprPlayers]);
+
   const picks = drafts[scoring];
   const config = LEAGUE_CONFIGS[scoring];
   const draftLimit = config.teamCount * config.rounds;
@@ -244,6 +290,7 @@ export default function Home() {
   );
   const featured = recommendations[0];
   const rosterSlots = assignRosterSlots(roster, config);
+  const sleeperControlled = scoring === "ppr";
 
   const shownPlayers = useMemo(() => {
     const source = view === "available"
@@ -257,7 +304,7 @@ export default function Home() {
   }, [available, filter, picks, playerMap, query, view]);
 
   function recordPick(player: Player, mine: boolean) {
-    if (draftedIds.has(player.id) || picks.length >= draftLimit) return;
+    if (sleeperControlled || draftedIds.has(player.id) || picks.length >= draftLimit) return;
     setDrafts((currentDrafts) => ({
       ...currentDrafts,
       [scoring]: [...currentDrafts[scoring], { playerId: player.id, mine, at: currentDrafts[scoring].length + 1 }],
@@ -265,9 +312,13 @@ export default function Home() {
     setQuery("");
   }
 
-  function undoPick() { setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: currentDrafts[scoring].slice(0, -1) })); }
+  function undoPick() {
+    if (sleeperControlled) return;
+    setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: currentDrafts[scoring].slice(0, -1) }));
+  }
   function resetDraft() {
-    if (window.confirm(`Reset the entire ${scoring === "ppr" ? "full-PPR" : "half-PPR"} draft? This removes every logged pick in this tab.`)) {
+    if (sleeperControlled) return;
+    if (window.confirm("Reset the entire half-PPR draft? This removes every logged pick in this tab.")) {
       setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: [] }));
     }
   }
@@ -284,6 +335,7 @@ export default function Home() {
   }
 
   function importDraft(event: ChangeEvent<HTMLInputElement>) {
+    if (sleeperControlled) return;
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -295,7 +347,7 @@ export default function Home() {
         const imported = incoming.filter((pick) => typeof pick.playerId === "string" && playerMap.has(pick.playerId)).slice(0, draftLimit);
         setDrafts((currentDrafts) => ({ ...currentDrafts, [scoring]: imported }));
       } catch {
-        window.alert(`That file is not a valid ${scoring === "ppr" ? "full-PPR" : "half-PPR"} draft export.`);
+        window.alert("That file is not a valid half-PPR draft export.");
       }
     };
     reader.readAsText(file);
@@ -320,11 +372,12 @@ export default function Home() {
           <button type="button" aria-pressed={scoring === "ppr"} className={scoring === "ppr" ? "selected" : ""} onClick={() => changeScoring("ppr")}>Full PPR</button>
         </fieldset>
         <div className="leaguePill"><span />{` ${config.teamCount}-team · Pick ${config.draftSlot} · ${scoring === "ppr" ? "2 W/R/T · 5 BN" : "1 FLEX · 7 BN"} · Snake`}</div>
+        {scoring === "ppr" && <div className={`sleeperPill ${sleeperSync.status}`} title={sleeperSync.lastUpdated ? `Last synced ${sleeperSync.lastUpdated.toLocaleTimeString()}` : "Connecting to Sleeper"}><span />SLEEPER {sleeperSync.status === "live" ? `LIVE · ${picks.length} PICKS` : sleeperSync.status === "error" ? "RETRYING" : "CONNECTING"}</div>}
         <div className="strategyPill">UPSIDE-FIRST</div>
         <div className="headerActions">
-          <button className="quietButton" onClick={undoPick} disabled={!picks.length}>Undo</button>
+          <button className="quietButton" onClick={undoPick} disabled={sleeperControlled || !picks.length}>Undo</button>
           <button className="quietButton" onClick={exportDraft}>Export</button>
-          <button className="quietButton" onClick={() => importRef.current?.click()}>Import</button>
+          <button className="quietButton" onClick={() => importRef.current?.click()} disabled={sleeperControlled}>Import</button>
           <input ref={importRef} className="visuallyHidden" type="file" accept="application/json" onChange={importDraft} />
         </div>
       </header>
@@ -346,11 +399,11 @@ export default function Home() {
             <div className="featuredName"><span className={`posBadge ${featured.player.pos.toLowerCase()}`}>{featured.player.pos}</span><h3>{featured.player.name}</h3></div>
             <p>{featured.explanation}</p>
             <div className="featuredMeta"><span>{featured.player.team}</span><span>Bye {featured.player.bye}</span><span>{scoring === "ppr" ? "Full-PPR" : "Half-PPR"} #{featured.player.rank}</span><span>Age {featured.strategy.age || "—"}</span><span>Upside {featured.strategy.upside}/10</span><span>Availability {featured.strategy.availability}/10</span><span>{featured.strategy.injuryStatus ?? "No current designation"}</span></div>
-            <div className="featuredActions"><button className="primaryButton" onClick={() => recordPick(featured.player, true)}>Draft for me</button><button className="secondaryButton dark" onClick={() => recordPick(featured.player, false)}>Taken by another team</button></div>
+            <div className="featuredActions">{sleeperControlled ? <><button className="primaryButton" disabled>Make pick in Sleeper</button><button className="secondaryButton dark" disabled>{sleeperSync.status === "live" ? "Picks update automatically" : "Waiting for Sleeper"}</button></> : <><button className="primaryButton" onClick={() => recordPick(featured.player, true)}>Draft for me</button><button className="secondaryButton dark" onClick={() => recordPick(featured.player, false)}>Taken by another team</button></>}</div>
           </> : <h3>Draft complete</h3>}
         </div>
         <div className="fitGauge"><strong>{featured?.fit ?? "—"}</strong><span>FIT SCORE</span><div className="gaugeTrack"><i style={{ width: `${featured?.fit ?? 0}%` }} /></div><small>Value + need + youth + availability + ceiling</small></div>
-        <div className="alternatives"><p className="eyebrow">NEXT BEST</p>{recommendations.slice(1, 5).map((item, index) => <button key={item.player.id} onClick={() => recordPick(item.player, ourTurn)}><span>{index + 2}</span><div><strong>{item.player.name}</strong><small>{item.player.pos} · {item.player.team} · U{item.strategy.upside} · A{item.strategy.availability} · fit {item.fit}</small></div><b>＋</b></button>)}</div>
+        <div className="alternatives"><p className="eyebrow">NEXT BEST</p>{recommendations.slice(1, 5).map((item, index) => <button key={item.player.id} onClick={() => recordPick(item.player, ourTurn)} disabled={sleeperControlled}><span>{index + 2}</span><div><strong>{item.player.name}</strong><small>{item.player.pos} · {item.player.team} · U{item.strategy.upside} · A{item.strategy.availability} · fit {item.fit}</small></div><b>{sleeperControlled ? "•" : "＋"}</b></button>)}</div>
       </section>
 
       <div className="workspace">
@@ -367,7 +420,7 @@ export default function Home() {
                 <span className="rank">{String(player.rank).padStart(3, "0")}</span>
                 <div className="playerIdentity"><span className={`posBadge ${player.pos.toLowerCase()}`}>{player.pos === "DST" ? "D" : player.pos}</span><div><strong>{player.name}</strong><small>{player.team} · Bye {player.bye}{item.strategy.age ? ` · Age ${item.strategy.age}` : ""} · U{item.strategy.upside} · A{item.strategy.availability}{item.strategy.injuryStatus ? ` · ${item.strategy.injuryStatus}` : ""}</small></div></div>
                 <span className="tier">T{player.tier}</span><span className="rowFit">{view === "available" ? item.fit : "—"}</span>
-                {view === "available" ? <div className="rowActions"><button onClick={() => recordPick(player, false)} title="Taken by another team">Out</button><button className="mine" onClick={() => recordPick(player, true)} title="Add to my roster">Mine</button></div> : <span className={`draftedBy ${pick?.mine ? "mine" : ""}`}>{pick?.mine ? "MY ROSTER" : `PICK ${pick?.at}`}</span>}
+                {view === "available" ? sleeperControlled ? <span className="liveSynced">SLEEPER</span> : <div className="rowActions"><button onClick={() => recordPick(player, false)} title="Taken by another team">Out</button><button className="mine" onClick={() => recordPick(player, true)} title="Add to my roster">Mine</button></div> : <span className={`draftedBy ${pick?.mine ? "mine" : ""}`}>{pick?.mine ? "MY ROSTER" : `PICK ${pick?.at}`}</span>}
               </article>;
             })}
             {!shownPlayers.length && <div className="emptyState">No players match those filters.</div>}
@@ -383,7 +436,7 @@ export default function Home() {
 
       <footer>
         <div><strong>Fantasy Draft Room</strong><span>10-team Half PPR from slot 10 · 12-team Full PPR from slot 2.</span></div>
-        <div className="footerLinks"><a href={scoring === "ppr" ? "https://www.fantasypros.com/nfl/rankings/ppr-cheatsheets.php" : "https://www.fantasypros.com/nfl/rankings/half-point-ppr-cheatsheets.php"} target="_blank" rel="noreferrer">2026 {scoring === "ppr" ? "full-PPR" : "half-PPR"} rankings ↗</a><a href="https://docs.sleeper.com/" target="_blank" rel="noreferrer">Player profile data ↗</a><button onClick={resetDraft}>Reset this tab</button></div>
+        <div className="footerLinks"><a href={scoring === "ppr" ? "https://www.fantasypros.com/nfl/rankings/ppr-cheatsheets.php" : "https://www.fantasypros.com/nfl/rankings/half-point-ppr-cheatsheets.php"} target="_blank" rel="noreferrer">2026 {scoring === "ppr" ? "full-PPR" : "half-PPR"} rankings ↗</a><a href="https://docs.sleeper.com/" target="_blank" rel="noreferrer">Player profile data ↗</a><button onClick={resetDraft} disabled={sleeperControlled}>{sleeperControlled ? "Sleeper controls picks" : "Reset this tab"}</button></div>
         <p>{scoring === "ppr" ? "Full-PPR" : "Half-PPR"} rankings refreshed {scoring === "ppr" ? PPR_RANKINGS_REFRESHED : RANKINGS_REFRESHED}; player status refreshed {PLAYER_PROFILES_REFRESHED}. Availability scores include a small manually reviewed recurring-risk adjustment. Recommendations are decision support, not medical advice or a guarantee of performance.</p>
       </footer>
     </main>
